@@ -1,0 +1,6 @@
+{
+  "_comment": "itop needs NO config — it auto-discovers your gateway and WAN(s). This file is OPTIONAL. Use 'extra_targets' to ADD lines to what's discovered (e.g. a server you care about). To fully override discovery, use a 'targets' array instead. Per target: kind=icmp|tcp|hop, host ('auto'=gateway), port (for tcp), ttl (for hop). Colors: gray green olive orange brown purple magenta blue teal red.",
+  "extra_targets": [
+    {"label": "my server", "kind": "tcp", "host": "example.com", "port": 443, "color": "red"}
+  ]
+}
