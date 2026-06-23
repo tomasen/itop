@@ -1,6 +1,6 @@
 # itop
 
-A tiny terminal latency monitor with a **logarithmic** graph.
+A terminal **network health monitor** with a **logarithmic** latency graph.
 
 `ping`/`gping` draw everything on one linear axis, so a ~0.5 ms LAN line and a
 ~25 ms internet line can't both be readable at once — the fast one collapses onto
@@ -8,8 +8,10 @@ the floor. `itop` uses a **log y-axis**, so every line gets room, and draws smoo
 **braille** lines like a real chart. The legend shows each target's IP and a
 friendly name.
 
-It's handy on a **dual-WAN / load-balanced** router, where it can graph each
-WAN's gateway and even an *intermediate hop* you normally can't ping directly.
+Point it at any setup — a **single connection**, or a **multi-WAN / load-balanced**
+router. It auto-detects your WAN(s) and breaks each one out into its gateway,
+next hop, and internet latency — including *intermediate hops* you normally can't
+ping directly.
 
 ```
  itop · latency · LOG scale (ms) · q to quit
@@ -44,7 +46,7 @@ ln -s "$PWD/itop.py" /usr/local/bin/itop
 **No config needed.** On startup `itop` auto-discovers your network: it probes
 several public IPs, groups them by their first hop to identify each WAN, then
 graphs your router plus every WAN's **gateway**, **next hop**, and **internet**
-latency — single-WAN or dual-WAN, figured out for you.
+latency — one WAN or several, figured out for you.
 
 ## Configure (optional)
 
@@ -75,7 +77,7 @@ Colors: `gray green olive orange brown purple magenta blue teal red`
 
 ### Why `hop` exists (multi-WAN)
 
-On a load-balanced dual-WAN router you can't reliably `ping` an intermediate hop:
+On a load-balanced multi-WAN router you can't reliably `ping` an intermediate hop:
 the router hashes the destination to *some* WAN, and CGNAT hop addresses only
 exist on their own WAN. Instead, `hop` sends a probe toward a destination that's
 pinned to one WAN (e.g. `1.1.1.1`) but with a small **TTL**, so it expires *at*

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""itop — a tiny terminal latency monitor with a LOGARITHMIC graph.
+"""itop — a terminal network health monitor with a LOGARITHMIC latency graph.
 
 One live graph, log y-axis (so sub-millisecond LAN latency and tens-of-ms
 internet latency are both readable at once), smooth braille lines, and a legend
@@ -13,7 +13,8 @@ Targets are configurable and can be:
            multi-WAN link, where you can't address that hop directly.
 
 Config:  ~/.config/itop/config.json   (see config.example.json)
-With no config it watches your default gateway plus 1.1.1.1 and 8.8.8.8.
+With no config it auto-discovers your gateway and connection(s) — works for a
+single connection or a multi-WAN / load-balanced router (broken out per WAN).
 
 Keys: q or Ctrl-C to quit.   Self-test: itop.py --selftest
 """
@@ -94,7 +95,9 @@ def default_gateway():
     return None
 
 # ---- auto-discovery ------------------------------------------------------
-DISCOVERY_PROBES = ["1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.222", "1.0.0.1", "8.8.4.4"]
+# public resolvers used only to map paths; more = better coverage of 3+ WANs
+DISCOVERY_PROBES = ["1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.222", "1.0.0.1",
+                    "8.8.4.4", "4.2.2.2", "64.6.64.6", "208.67.220.220", "149.112.112.112"]
 # per-WAN color triples: (gateway, intermediate hop, internet)
 WAN_COLORS = [("green", "olive", "purple"), ("orange", "brown", "blue"),
               ("teal", "teal", "magenta"), ("red", "brown", "gray")]
