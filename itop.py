@@ -102,46 +102,69 @@ DISCOVERY_PROBES = ["1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.222", "1.0.0.1"
 WAN_COLORS = [("green", "olive", "purple"), ("orange", "brown", "blue"),
               ("teal", "teal", "magenta"), ("red", "brown", "gray")]
 
-def trace_hop_ip(dest, ttl):
-    """IP of the router `ttl` hops toward dest (None if it doesn't answer)."""
+# Discovery scans hops 2..MAXTTL (hop 1 is the LAN router, already shown
+# separately) and uses whichever hops actually answer. Networks where hop 2 is
+# silent — common with CGNAT or a router that won't answer TTL-expired — still
+# get their first responding provider hop picked up.
+DISCOVERY_FIRST_TTL = 2
+DISCOVERY_MAX_TTL = 6
+_HOP_LINE = re.compile(r"^\s*(\d+)\s+(\d+\.\d+\.\d+\.\d+)")
+
+def trace_hops(dest, first=DISCOVERY_FIRST_TTL, last=DISCOVERY_MAX_TTL):
+    """Map {ttl: ip} for the hops that answer between `first`..`last` toward
+    dest, via a single traceroute. Empty if none answer (offline / no tool)."""
+    hops = {}
     try:
         out = subprocess.run(
-            ["traceroute", "-f", str(ttl), "-m", str(ttl), "-q", "1", "-w", "2", dest],
-            capture_output=True, text=True, timeout=6).stdout
-        m = _PARENS_IP.search(out)
-        return m.group(1) if m else None
+            ["traceroute", "-n", "-f", str(first), "-m", str(last),
+             "-q", "1", "-w", "1", dest],
+            capture_output=True, text=True, timeout=last * 2 + 5).stdout
+        for line in out.splitlines():
+            m = _HOP_LINE.match(line)
+            if m:
+                hops[int(m.group(1))] = m.group(2)
     except Exception:
-        return None
+        pass
+    return hops
 
 def discover_targets():
-    """Probe several public IPs, group by their first WAN hop to find each WAN,
-    and build router + per-WAN gateway/hop/internet lines automatically."""
-    hop2 = {}
+    """Probe several public IPs, group by their first responding hop to find each
+    WAN, and build router + per-WAN gateway/hop/internet lines automatically."""
+    maps = {}
     lock = threading.Lock()
     def work(d):
-        ip = trace_hop_ip(d, 2)
+        h = trace_hops(d)
         with lock:
-            hop2[d] = ip
+            maps[d] = h
     ths = [threading.Thread(target=work, args=(d,), daemon=True) for d in DISCOVERY_PROBES]
     for t in ths: t.start()
-    for t in ths: t.join(timeout=7)
+    for t in ths: t.join(timeout=DISCOVERY_MAX_TTL * 2 + 6)
 
-    wans, seen = [], set()           # one representative dest per distinct WAN gateway
+    # One representative dest per distinct WAN, keyed by its first responding hop.
+    # `ttls` are the actual TTLs that answered, so the gw/hop lines track real
+    # routers instead of assuming fixed hop positions.
+    wans, seen = [], set()
     for d in DISCOVERY_PROBES:
-        gw = hop2.get(d)
-        if gw and gw not in seen:
-            seen.add(gw); wans.append(d)
+        ttls = sorted(maps.get(d) or {})
+        if not ttls:
+            continue
+        key = maps[d][ttls[0]]
+        if key not in seen:
+            seen.add(key); wans.append((d, ttls))
 
     targets = []
     gw = default_gateway()
     if gw:
         targets.append({"label": "router", "kind": "icmp", "host": gw, "color": "gray"})
     multi = len(wans) > 1
-    for i, dest in enumerate(wans):
+    for i, (dest, ttls) in enumerate(wans):
         p = f"WAN-{chr(ord('A') + i)} " if multi else ""
         c = WAN_COLORS[i % len(WAN_COLORS)]
-        targets.append({"label": f"{p}gw",  "kind": "hop",  "host": dest, "ttl": 2, "color": c[0]})
-        targets.append({"label": f"{p}hop", "kind": "hop",  "host": dest, "ttl": 3, "color": c[1]})
+        # Intermediate hops can't be pinged directly; number them by closeness —
+        # closest answering hop is hop-1, next hop-2, … (TTL ascending).
+        for n, ttl in enumerate(ttls, start=1):
+            targets.append({"label": f"{p}hop-{n}", "kind": "hop", "host": dest, "ttl": ttl,
+                            "color": c[0] if n == 1 else c[1]})
         targets.append({"label": f"{p}net", "kind": "icmp", "host": dest, "color": c[2]})
     if not wans:                      # offline / no traceroute: still show something
         targets.append({"label": "internet", "kind": "icmp", "host": "1.1.1.1", "color": "blue"})
@@ -240,7 +263,7 @@ def start_targets(targets, interval, stop):
         if kind == "tcp":
             disp = f"{host}:{t.get('port', 0)}"
         elif kind == "hop":
-            disp = host  # replaced by the discovered hop IP once probed
+            disp = ""  # the hop's own IP isn't known yet; filled in once probed (not the destination)
         else:
             disp = host
         s = Series(t.get("label", host), color, disp)
